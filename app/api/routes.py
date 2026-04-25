@@ -7,6 +7,53 @@ from ..models import Client, Review, Reply, Location
 api_bp = Blueprint("api", __name__)
 
 
+@api_bp.route("/checkout", methods=["POST"])
+def create_checkout():
+    import os
+    import stripe
+    from ..webhooks.routes import FOUNDER_TIER_LIMIT, _get_or_create_founder_counter
+
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    business_name = (data.get("business_name") or "").strip()
+    business_type = (data.get("business_type") or "").strip()
+    city = (data.get("city") or "").strip()
+    plan = data.get("plan", "standard")
+
+    if not email or not business_name or not city:
+        return jsonify({"error": "Email, business name and city are required"}), 400
+
+    stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+    if plan == "founder":
+        counter = _get_or_create_founder_counter()
+        if counter.count >= FOUNDER_TIER_LIMIT:
+            plan = "standard"
+
+    price_id = (
+        os.environ.get("STRIPE_PRICE_FOUNDER") if plan == "founder"
+        else os.environ.get("STRIPE_PRICE_STANDARD")
+    )
+
+    session = stripe.checkout.Session.create(
+        customer_email=email,
+        payment_method_types=["card"],
+        line_items=[{"price": price_id, "quantity": 1}],
+        mode="subscription",
+        metadata={
+            "business_name": business_name,
+            "business_type": business_type,
+            "city": city,
+            "plan": plan,
+        },
+        success_url=f"{frontend_url}/welcome",
+        cancel_url=f"{frontend_url}/pricing",
+    )
+
+    return jsonify({"url": session.url})
+
+
 @api_bp.route("/dashboard", methods=["GET"])
 @jwt_required()
 def dashboard():

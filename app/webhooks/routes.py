@@ -46,12 +46,23 @@ def stripe_webhook():
     return jsonify({"status": "ok"})
 
 
+def _stripe_get(obj, key, default=None):
+    """Safe key access for Stripe objects which don't support .get()."""
+    try:
+        return obj[key]
+    except (KeyError, TypeError):
+        return default
+
+
 def _handle_checkout_completed(session):
-    email = session.get("customer_email") or session.get("customer_details", {}).get("email")
-    stripe_customer_id = session.get("customer")
-    stripe_subscription_id = session.get("subscription")
-    metadata = session.get("metadata", {})
-    is_founder = metadata.get("plan") == "founder"
+    email = session.customer_email
+    if not email and session.customer_details:
+        email = session.customer_details.email
+    stripe_customer_id = session.customer
+    stripe_subscription_id = session.subscription
+    metadata = session.metadata
+
+    is_founder = _stripe_get(metadata, "plan") == "founder"
 
     if not email:
         return
@@ -69,9 +80,9 @@ def _handle_checkout_completed(session):
     setup_token = secrets.token_urlsafe(32)
     client = Client(
         email=email.lower(),
-        business_name=metadata.get("business_name", ""),
-        business_type=metadata.get("business_type", ""),
-        city=metadata.get("city", ""),
+        business_name=_stripe_get(metadata, "business_name", ""),
+        business_type=_stripe_get(metadata, "business_type", ""),
+        city=_stripe_get(metadata, "city", ""),
         stripe_customer_id=stripe_customer_id,
         stripe_subscription_id=stripe_subscription_id,
         founder_tier=founder_tier,
@@ -84,7 +95,7 @@ def _handle_checkout_completed(session):
 
 
 def _handle_payment_failed(invoice):
-    stripe_customer_id = invoice.get("customer")
+    stripe_customer_id = invoice.customer
     client = Client.query.filter_by(stripe_customer_id=stripe_customer_id).first()
     if not client:
         return
@@ -92,7 +103,7 @@ def _handle_payment_failed(invoice):
 
 
 def _handle_subscription_deleted(subscription):
-    stripe_customer_id = subscription.get("customer")
+    stripe_customer_id = subscription.customer
     client = Client.query.filter_by(stripe_customer_id=stripe_customer_id).first()
     if not client:
         return
@@ -103,8 +114,8 @@ def _handle_subscription_deleted(subscription):
 
 
 def _handle_subscription_updated(subscription):
-    stripe_customer_id = subscription.get("customer")
-    stripe_subscription_id = subscription.get("id")
+    stripe_customer_id = subscription.customer
+    stripe_subscription_id = subscription.id
     client = Client.query.filter_by(stripe_customer_id=stripe_customer_id).first()
     if not client:
         return

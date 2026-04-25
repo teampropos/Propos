@@ -17,6 +17,15 @@ MODEL = "claude-sonnet-4-5-20250929"
 _client = Anthropic(api_key=API_KEY)
 
 
+def _strip_dashes(text: str) -> str:
+    text = text.replace(" — ", ", ")
+    text = text.replace("— ", ", ")
+    text = text.replace(" —", ",")
+    text = text.replace("—", ", ")
+    text = text.replace(" - ", ", ")
+    return text
+
+
 def generate_reply(system_prompt: str, user_prompt: str) -> str:
     """Generate a review reply using Claude."""
     message = _client.messages.create(
@@ -25,7 +34,7 @@ def generate_reply(system_prompt: str, user_prompt: str) -> str:
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
-    return message.content[0].text.strip()
+    return _strip_dashes(message.content[0].text.strip())
 
 
 def classify(system_prompt: str, user_prompt: str) -> str:
