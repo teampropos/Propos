@@ -49,9 +49,8 @@ def build_system_prompt(profile: BusinessProfile, tone_memory_examples: list[str
     return "\n".join(parts)
 
 
-def build_user_prompt(review: Review) -> str:
+def build_user_prompt(review: Review, direction: str | None = None) -> str:
     """Build the user prompt for reply generation."""
-    # Extract first name from reviewer
     first_name = _get_first_name(review.reviewer_name)
 
     parts = []
@@ -69,6 +68,11 @@ def build_user_prompt(review: Review) -> str:
         parts.append("Review: (no text — star rating only)")
 
     parts.append("")
+
+    if direction and direction.strip():
+        parts.append(f"Direction from owner: {direction.strip()}")
+        parts.append("")
+
     parts.append("Write a reply.")
 
     return "\n".join(parts)

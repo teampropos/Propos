@@ -1,69 +1,60 @@
 """Tone memory management for per-client reply personalisation."""
 
-from typing import Optional
-
 TONE_MEMORY_CAP = 15
 
 
-def get_tone_memory(client_id: str, db_session=None) -> list[str]:
-    """Return the last 15 approved replies for a client, most recent first.
+def get_tone_memory(client_id: int, db_session=None) -> list[str]:
+    """Return up to 15 approved replies for a client.
 
-    When db_session is None (no database connected), returns an empty list.
-    Once PostgreSQL is live, uncomment the query below.
+    Edited replies (weight=2) are prioritised over unedited (weight=1).
+    Falls back to empty list if no DB session provided.
     """
     if db_session is None:
         return []
 
-    # ── PostgreSQL query (uncomment when DB is live) ──────────────
-    #
-    # result = db_session.execute(
-    #     """
-    #     SELECT reply_text FROM tone_memory
-    #     WHERE client_id = :client_id
-    #     ORDER BY
-    #         CASE WHEN edited = true THEN 0 ELSE 1 END,
-    #         created_at DESC
-    #     LIMIT :cap
-    #     """,
-    #     {"client_id": client_id, "cap": TONE_MEMORY_CAP},
-    # )
-    # return [row[0] for row in result.fetchall()]
-    #
-    # ──────────────────────────────────────────────────────────────
+    from app.models import ToneMemory
 
-    return []
+    rows = (
+        db_session.query(ToneMemory)
+        .filter(ToneMemory.client_id == client_id)
+        .order_by(ToneMemory.weight.desc(), ToneMemory.created_at.desc())
+        .limit(TONE_MEMORY_CAP)
+        .all()
+    )
+    return [row.reply_text for row in rows]
 
 
-def trim_tone_memory(client_id: str, db_session) -> None:
-    """Trim tone memory to cap, dropping oldest unedited approvals first.
+def save_to_tone_memory(client_id: int, reply_text: str, edited: bool, db_session) -> None:
+    """Save an approved reply to tone memory and trim if over cap."""
+    from app.models import ToneMemory
 
-    Call after saving a new approved reply.
-    """
-    # ── PostgreSQL query (uncomment when DB is live) ──────────────
-    #
-    # # Count total
-    # count = db_session.execute(
-    #     "SELECT COUNT(*) FROM tone_memory WHERE client_id = :client_id",
-    #     {"client_id": client_id},
-    # ).scalar()
-    #
-    # if count <= TONE_MEMORY_CAP:
-    #     return
-    #
-    # # Delete oldest unedited first, then oldest edited
-    # excess = count - TONE_MEMORY_CAP
-    # db_session.execute(
-    #     """
-    #     DELETE FROM tone_memory WHERE id IN (
-    #         SELECT id FROM tone_memory
-    #         WHERE client_id = :client_id
-    #         ORDER BY edited ASC, created_at ASC
-    #         LIMIT :excess
-    #     )
-    #     """,
-    #     {"client_id": client_id, "excess": excess},
-    # )
-    # db_session.commit()
-    #
-    # ──────────────────────────────────────────────────────────────
-    pass
+    entry = ToneMemory(
+        client_id=client_id,
+        reply_text=reply_text,
+        edited=edited,
+        weight=2 if edited else 1,
+    )
+    db_session.add(entry)
+    db_session.flush()
+    _trim_tone_memory(client_id, db_session)
+    db_session.commit()
+
+
+def _trim_tone_memory(client_id: int, db_session) -> None:
+    """Trim to cap, dropping oldest unedited approvals first."""
+    from app.models import ToneMemory
+
+    count = db_session.query(ToneMemory).filter(ToneMemory.client_id == client_id).count()
+    if count <= TONE_MEMORY_CAP:
+        return
+
+    excess = count - TONE_MEMORY_CAP
+    to_delete = (
+        db_session.query(ToneMemory)
+        .filter(ToneMemory.client_id == client_id)
+        .order_by(ToneMemory.weight.asc(), ToneMemory.created_at.asc())
+        .limit(excess)
+        .all()
+    )
+    for row in to_delete:
+        db_session.delete(row)
