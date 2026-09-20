@@ -11,14 +11,12 @@ api_bp = Blueprint("api", __name__)
 def create_checkout():
     import os
     import stripe
-    from ..webhooks.routes import FOUNDER_TIER_LIMIT, _get_or_create_founder_counter
 
     data = request.get_json() or {}
     email = (data.get("email") or "").strip().lower()
     business_name = (data.get("business_name") or "").strip()
     business_type = (data.get("business_type") or "").strip()
     city = (data.get("city") or "").strip()
-    plan = data.get("plan", "standard")
 
     if not email or not business_name or not city:
         return jsonify({"error": "Email, business name and city are required"}), 400
@@ -26,26 +24,15 @@ def create_checkout():
     stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
     frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
-    if plan == "founder":
-        counter = _get_or_create_founder_counter()
-        if counter.count >= FOUNDER_TIER_LIMIT:
-            plan = "standard"
-
-    price_id = (
-        os.environ.get("STRIPE_PRICE_FOUNDER") if plan == "founder"
-        else os.environ.get("STRIPE_PRICE_STANDARD")
-    )
-
     session = stripe.checkout.Session.create(
         customer_email=email,
         payment_method_types=["card"],
-        line_items=[{"price": price_id, "quantity": 1}],
+        line_items=[{"price": os.environ.get("STRIPE_PRICE_ID"), "quantity": 1}],
         mode="subscription",
         metadata={
             "business_name": business_name,
             "business_type": business_type,
             "city": city,
-            "plan": plan,
         },
         success_url=f"{frontend_url}/welcome",
         cancel_url=f"{frontend_url}/pricing",
@@ -110,6 +97,8 @@ def reviews():
         "review_text": r.review_text,
         "received_at": r.received_at.isoformat(),
         "status": r.status,
+        "reply_text": r.reply.reply_text if r.reply else None,
+        "replied_at": r.reply.posted_at.isoformat() if r.reply and r.reply.posted_at else None,
     } for r in rows])
 
 
@@ -162,13 +151,21 @@ def approve_reply(review_id):
         rep.edited = True
         was_edited = True
 
+    client = Client.query.get(client_id)
+    if client.gbp_connected and review.google_review_id:
+        from gbp.auth import get_session_for_client
+        from gbp.reviews import post_reply as post_reply_to_google
+
+        google_session = get_session_for_client(client, db.session)
+        post_reply_to_google(google_session, review.google_review_id, rep.reply_text)
+        rep.posted_at = datetime.now(timezone.utc)
+
     rep.approved_at = datetime.now(timezone.utc)
     review.status = "auto_posted"
     db.session.flush()
 
     from reply_engine.tone_memory import save_to_tone_memory
     save_to_tone_memory(client_id, rep.reply_text, edited=was_edited, db_session=db.session)
-    # TODO: post reply to Google via GBP API when connected
 
     return jsonify({"status": "approved"})
 
@@ -255,6 +252,78 @@ def locations():
     } for loc in rows])
 
 
+@api_bp.route("/locations", methods=["POST"])
+@jwt_required()
+def create_location():
+    import os
+    import stripe
+
+    client_id = int(get_jwt_identity())
+    client = Client.query.get(client_id)
+    if not client:
+        return jsonify({"error": "Not found"}), 404
+
+    data = request.get_json() or {}
+    name = (data.get("name") or "").strip()
+    city = (data.get("city") or "").strip()
+    tone_preference = data.get("tone_preference") or client.tone_preference
+
+    if not name or not city:
+        return jsonify({"error": "Name and city are required"}), 400
+
+    if not client.stripe_subscription_id:
+        return jsonify({"error": "No active subscription found"}), 400
+
+    stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+    item = stripe.SubscriptionItem.create(
+        subscription=client.stripe_subscription_id,
+        price=os.environ.get("STRIPE_PRICE_ADDITIONAL_LOCATION"),
+        quantity=1,
+    )
+
+    location = Location(
+        client_id=client_id,
+        name=name,
+        city=city,
+        tone_preference=tone_preference,
+        stripe_subscription_item_id=item.id,
+        active=True,
+    )
+    db.session.add(location)
+    db.session.commit()
+
+    return jsonify({
+        "id": location.id,
+        "name": location.name,
+        "city": location.city,
+        "tone_preference": location.tone_preference,
+        "active": location.active,
+    }), 201
+
+
+@api_bp.route("/locations/<int:location_id>", methods=["DELETE"])
+@jwt_required()
+def delete_location(location_id):
+    import os
+    import stripe
+
+    client_id = int(get_jwt_identity())
+    location = Location.query.filter_by(id=location_id, client_id=client_id).first_or_404()
+
+    if location.stripe_subscription_item_id:
+        stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+        try:
+            stripe.SubscriptionItem.delete(location.stripe_subscription_item_id)
+        except stripe.error.InvalidRequestError:
+            pass  # already removed on Stripe's side
+
+    location.active = False
+    location.stripe_subscription_item_id = None
+    db.session.commit()
+
+    return jsonify({"status": "deactivated"})
+
+
 @api_bp.route("/preferences", methods=["POST"])
 @jwt_required()
 def save_preferences():
@@ -283,6 +352,10 @@ def onboarding_complete():
 
     client.onboarding_complete = True
     db.session.commit()
+
+    from ..emails import send_onboarding_confirmation
+    send_onboarding_confirmation(client)
+
     # TODO: trigger backlog processing if requested
     return jsonify({"status": "ok"})
 

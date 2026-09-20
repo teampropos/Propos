@@ -4,20 +4,9 @@ import stripe
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify
 from ..extensions import db, bcrypt
-from ..models import Client, FounderCounter
+from ..models import Client
 
 webhooks_bp = Blueprint("webhooks", __name__)
-
-FOUNDER_TIER_LIMIT = 50
-
-
-def _get_or_create_founder_counter():
-    counter = FounderCounter.query.first()
-    if not counter:
-        counter = FounderCounter(count=0)
-        db.session.add(counter)
-        db.session.commit()
-    return counter
 
 
 @webhooks_bp.route("/stripe", methods=["POST"])
@@ -62,20 +51,12 @@ def _handle_checkout_completed(session):
     stripe_subscription_id = session.subscription
     metadata = session.metadata
 
-    is_founder = _stripe_get(metadata, "plan") == "founder"
-
     if not email:
         return
 
     existing = Client.query.filter_by(email=email).first()
     if existing:
         return
-
-    counter = _get_or_create_founder_counter()
-    founder_tier = False
-    if is_founder and counter.count < FOUNDER_TIER_LIMIT:
-        founder_tier = True
-        counter.count += 1
 
     setup_token = secrets.token_urlsafe(32)
     client = Client(
@@ -85,13 +66,14 @@ def _handle_checkout_completed(session):
         city=_stripe_get(metadata, "city", ""),
         stripe_customer_id=stripe_customer_id,
         stripe_subscription_id=stripe_subscription_id,
-        founder_tier=founder_tier,
         setup_token=setup_token,
         setup_token_expires_at=datetime.now(timezone.utc) + timedelta(days=7),
     )
     db.session.add(client)
     db.session.commit()
-    # TODO: send onboarding email via Resend with setup link
+
+    from ..emails import send_welcome_email
+    send_welcome_email(client)
 
 
 def _handle_payment_failed(invoice):
@@ -99,7 +81,9 @@ def _handle_payment_failed(invoice):
     client = Client.query.filter_by(stripe_customer_id=stripe_customer_id).first()
     if not client:
         return
-    # TODO: send failed payment email via Resend
+
+    from ..emails import send_failed_payment_email
+    send_failed_payment_email(client)
 
 
 def _handle_subscription_deleted(subscription):
@@ -110,7 +94,9 @@ def _handle_subscription_deleted(subscription):
     client.cancelled_at = datetime.now(timezone.utc)
     client.data_archive_at = datetime.now(timezone.utc) + timedelta(days=30)
     db.session.commit()
-    # TODO: send cancellation email via Resend
+
+    from ..emails import send_cancellation_email
+    send_cancellation_email(client)
 
 
 def _handle_subscription_updated(subscription):

@@ -41,6 +41,8 @@ class Location(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False)
     google_location_id = db.Column(db.String(255), nullable=True)
+    gbp_review_path = db.Column(db.String(255), nullable=True)
+    stripe_subscription_item_id = db.Column(db.String(255), nullable=True)
     name = db.Column(db.String(255), nullable=False)
     city = db.Column(db.String(100), nullable=False)
     tone_preference = db.Column(db.String(50), nullable=True)
