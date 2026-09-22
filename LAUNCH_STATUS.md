@@ -8,6 +8,17 @@ re-deriving anything. If you're reading this because a terminal crashed —
 nothing is lost. Everything described below is committed to GitHub and/or
 already running in production.
 
+**Database backups (22 Sept 2026):** production had zero backup strategy —
+a droplet failure or bad migration would have meant permanent loss of every
+client's data. Fixed: nightly `pg_dump` via `scripts/backup_db.sh`, kept
+locally (14 days) and uploaded to a DigitalOcean Spaces bucket
+(`propos-backups`, sgp1 region, 90-day retention) so it survives losing the
+droplet entirely. Cron runs it at 3am Sydney time. Verified for real, not
+just deployed: ran it manually, confirmed the file landed in both places,
+and test-restored the dump into a throwaway database to confirm it's
+actually valid. Spaces access keys live only in
+`/root/.config/rclone/rclone.conf` on the droplet — not in git.
+
 **Pre-launch audit (22 Sept 2026):** did a full click-through of the live
 site and portal before submitting to Google for OAuth verification, since a
 reviewer will actually look at this. Found and fixed one significant bug:
