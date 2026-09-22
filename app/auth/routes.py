@@ -215,6 +215,7 @@ def me():
         "city": client.city,
         "owner_name": client.owner_name,
         "tone_preference": client.tone_preference,
+        "reply_cadence": client.reply_cadence,
         "gbp_connected": client.gbp_connected,
         "onboarding_complete": client.onboarding_complete,
     })

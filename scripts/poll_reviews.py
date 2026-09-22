@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app import create_app
+from app.cadence import compute_scheduled_post_at
 from app.extensions import db
 from app.models import Client, Location, Review, Reply
 from gbp.auth import get_session_for_client
@@ -85,20 +86,59 @@ def poll_location(client: Client, location: Location) -> int:
         db.session.add(reply)
 
         if result.auto_post:
-            post_reply(session, google_review_id, result.reply_text)
-            now = datetime.now(timezone.utc)
-            reply.auto_posted = True
-            reply.posted_at = now
-            reply.approved_at = now
-            db_review.status = "auto_posted"
-            db.session.commit()
-            save_to_tone_memory(client.id, result.reply_text, edited=False, db_session=db.session)
+            scheduled_for = compute_scheduled_post_at(client.reply_cadence, db_review.received_at)
+            reply.scheduled_post_at = scheduled_for
+            reply.approved_at = datetime.now(timezone.utc)
+
+            if scheduled_for <= datetime.now(timezone.utc):
+                # Instant cadence (or the scheduled time already elapsed) — post right away.
+                post_reply(session, google_review_id, result.reply_text)
+                reply.auto_posted = True
+                reply.posted_at = datetime.now(timezone.utc)
+                db_review.status = "auto_posted"
+                db.session.commit()
+                save_to_tone_memory(client.id, result.reply_text, edited=False, db_session=db.session)
+            else:
+                db_review.status = "scheduled"
+                db.session.commit()
         else:
             db.session.commit()
 
         processed += 1
 
     return processed
+
+
+def post_due_replies() -> int:
+    """Post any auto-approved replies whose scheduled time has arrived —
+    covers WITHIN_24H/FEW_DAYS/WEEKLY/MONTHLY cadences, which don't post at
+    the moment they're first detected."""
+    due = Reply.query.filter(
+        Reply.scheduled_post_at.isnot(None),
+        Reply.scheduled_post_at <= datetime.now(timezone.utc),
+        Reply.posted_at.is_(None),
+    ).all()
+
+    posted = 0
+    for reply in due:
+        review = Review.query.get(reply.review_id)
+        client = Client.query.get(reply.client_id)
+        if not review or not client or not client.gbp_connected:
+            continue
+        try:
+            session = get_session_for_client(client, db.session)
+            post_reply(session, review.google_review_id, reply.reply_text)
+            now = datetime.now(timezone.utc)
+            reply.auto_posted = True
+            reply.posted_at = now
+            review.status = "auto_posted"
+            db.session.commit()
+            save_to_tone_memory(client.id, reply.reply_text, edited=False, db_session=db.session)
+            posted += 1
+        except Exception as e:
+            print(f"[{client.email}] failed to post scheduled reply for review {review.id}: {e}")
+
+    return posted
 
 
 def main():
@@ -121,7 +161,10 @@ def main():
                     print(f"[{client.email}] {location.name}: {count} new review(s) processed")
             except Exception as e:
                 print(f"[{client.email}] {location.name}: ERROR {e}")
-        print(f"Done. {total} new review(s) processed across {len(locations)} location(s).")
+
+        due_posted = post_due_replies()
+
+        print(f"Done. {total} new review(s) processed across {len(locations)} location(s), {due_posted} scheduled repl(y/ies) posted.")
 
 
 if __name__ == "__main__":

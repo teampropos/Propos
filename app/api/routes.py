@@ -337,6 +337,8 @@ def save_preferences():
         client.tone_preference = data["tone_preference"]
     if "owner_name" in data:
         client.owner_name = data.get("owner_name") or None
+    if "reply_cadence" in data:
+        client.reply_cadence = data["reply_cadence"]
 
     db.session.commit()
     return jsonify({"status": "saved"})
