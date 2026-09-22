@@ -24,6 +24,19 @@ to 2025, and a Preferences page bug where an unrecognized tone value left
 the sample-reply box rendering empty. All fixed, deployed, committed,
 pushed. See the "Other gaps" section below for what's still open.
 
+**New feature (22 Sept 2026): reply cadence.** Clients can now choose how
+long Propos waits before actually posting an auto-approved reply to
+Google — instantly, within 24 hours, within 3–4 days, weekly, or monthly.
+Set during onboarding (folded into the existing tone step) or changed
+later in Preferences. Only affects the auto-post path for positive
+reviews — negative/needs_human reviews always wait for the client's own
+portal approval regardless of this setting. Implementation: `app/cadence.py`
+computes the target post time; `scripts/poll_reviews.py` schedules rather
+than immediately posts (unless cadence is INSTANT), and each 10-minute
+poll cycle also checks for anything that's come due and posts it then.
+Reviews awaiting their cadence window show a new "Scheduled" status in the
+portal. Deployed, committed, pushed.
+
 ---
 
 ## The repos (there are three directories — only two are real)
