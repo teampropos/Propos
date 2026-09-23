@@ -50,6 +50,23 @@ def send_welcome_email(client) -> None:
     _send(client.email, "Welcome to Propos — set up your account", body)
 
 
+def send_subscription_activated_email(client) -> None:
+    """Sent when an already-registered client (connected Google, browsed the
+    portal) subscribes. They already have a password and an account — this
+    just confirms payment went through, unlike send_welcome_email."""
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    body = f"""
+    <h2 style="margin-bottom: 4px;">You&rsquo;re live</h2>
+    <p>Payment received &mdash; Propos will start posting replies to {client.business_name}&rsquo;s reviews automatically from here on.</p>
+    <p>
+      <a href="{frontend_url}/portal/dashboard" style="display:inline-block; background:#141414; color:#fff; padding:12px 24px; border-radius:4px; text-decoration:none; margin: 12px 0;">
+        View your dashboard
+      </a>
+    </p>
+    """
+    _send(client.email, "You're live on Propos", body)
+
+
 def send_onboarding_confirmation(client) -> None:
     """Sent once the onboarding wizard is completed."""
     body = f"""

@@ -34,7 +34,15 @@ def _tone_for(client: Client) -> TonePreference:
 
 
 def poll_location(client: Client, location: Location) -> int:
-    """Fetch and process new reviews for one location. Returns count processed."""
+    """Fetch and process new reviews for one location. Returns count processed.
+
+    Polling and drafting happen regardless of subscription status — a client
+    who's connected Google but hasn't paid yet still sees real reviews and
+    draft replies land in their portal, so they can see Propos working
+    before committing to pay. Only the live write to Google is gated on
+    client.is_subscribed; nothing gets posted to a real business's Google
+    listing until they've actually subscribed."""
+    is_paid = client.is_subscribed
     session = get_session_for_client(client, db.session)
     raw_reviews = list_reviews(session, location.gbp_review_path)
 
@@ -85,7 +93,7 @@ def poll_location(client: Client, location: Location) -> int:
         )
         db.session.add(reply)
 
-        if result.auto_post:
+        if result.auto_post and is_paid:
             scheduled_for = compute_scheduled_post_at(client.reply_cadence, db_review.received_at)
             reply.scheduled_post_at = scheduled_for
             reply.approved_at = datetime.now(timezone.utc)
@@ -101,6 +109,13 @@ def poll_location(client: Client, location: Location) -> int:
             else:
                 db_review.status = "scheduled"
                 db.session.commit()
+        elif result.auto_post and not is_paid:
+            # Would auto-post once paid — for now it's a draft the client can
+            # see in their portal to show Propos is working, nothing more.
+            # No scheduled_post_at is set, so post_due_replies() below can
+            # never pick this up and post it late/stale once they do pay.
+            db_review.status = "preview"
+            db.session.commit()
         else:
             db.session.commit()
 
@@ -124,6 +139,10 @@ def post_due_replies() -> int:
         review = Review.query.get(reply.review_id)
         client = Client.query.get(reply.client_id)
         if not review or not client or not client.gbp_connected:
+            continue
+        if not client.is_subscribed:
+            # Subscription was cancelled after this reply got scheduled —
+            # don't post to their live Google listing.
             continue
         try:
             session = get_session_for_client(client, db.session)

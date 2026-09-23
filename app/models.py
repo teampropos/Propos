@@ -35,6 +35,14 @@ class Client(db.Model):
     replies = db.relationship("Reply", back_populates="client", lazy="dynamic")
     tone_memories = db.relationship("ToneMemory", back_populates="client", lazy="dynamic")
 
+    @property
+    def is_subscribed(self) -> bool:
+        """True once Stripe payment has actually gone through and the
+        subscription hasn't since been cancelled. An account can exist,
+        connect Google, and be browsed before this is true — see the
+        connect-before-pay flow in auth/routes.py and api/routes.py."""
+        return self.stripe_subscription_id is not None and self.cancelled_at is None
+
 
 class Location(db.Model):
     __tablename__ = "locations"

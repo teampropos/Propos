@@ -44,11 +44,34 @@ def _stripe_get(obj, key, default=None):
 
 
 def _handle_checkout_completed(session):
+    stripe_customer_id = session.customer
+    stripe_subscription_id = session.subscription
+    client_reference_id = _stripe_get(session, "client_reference_id")
+
+    if client_reference_id:
+        # The normal path: client registered (POST /api/auth/register),
+        # possibly connected Google and browsed the portal, then subscribed
+        # via POST /api/checkout, which stamped their client id onto the
+        # Stripe session. Activate that same account — no new account, no
+        # setup-your-password email, since both already exist.
+        client = Client.query.get(int(client_reference_id))
+        if not client:
+            return
+        client.stripe_customer_id = stripe_customer_id
+        client.stripe_subscription_id = stripe_subscription_id
+        db.session.commit()
+
+        from ..emails import send_subscription_activated_email
+        send_subscription_activated_email(client)
+        return
+
+    # Fallback path: no client_reference_id, e.g. a payment link created
+    # directly in the Stripe dashboard rather than through /api/checkout.
+    # Preserve the old pay-first behaviour so a real payment never fails to
+    # produce an account.
     email = session.customer_email
     if not email and session.customer_details:
         email = session.customer_details.email
-    stripe_customer_id = session.customer
-    stripe_subscription_id = session.subscription
     metadata = session.metadata
 
     if not email:
@@ -56,6 +79,9 @@ def _handle_checkout_completed(session):
 
     existing = Client.query.filter_by(email=email).first()
     if existing:
+        existing.stripe_customer_id = stripe_customer_id
+        existing.stripe_subscription_id = stripe_subscription_id
+        db.session.commit()
         return
 
     setup_token = secrets.token_urlsafe(32)

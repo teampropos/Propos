@@ -14,6 +14,41 @@ def _state_serializer() -> URLSafeSerializer:
     return URLSafeSerializer(os.environ.get("SECRET_KEY"))
 
 
+@auth_bp.route("/register", methods=["POST"])
+def register():
+    """Create an account with no payment involved. Lets a prospective client
+    connect their Google Business Profile and browse the product before
+    subscribing — subscribing happens later via POST /api/checkout, once
+    they're logged in with the token this returns."""
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    business_name = (data.get("business_name") or "").strip()
+    business_type = (data.get("business_type") or "").strip()
+    city = (data.get("city") or "").strip()
+
+    if not email or not business_name or not city:
+        return jsonify({"error": "Email, business name and city are required"}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
+
+    if Client.query.filter_by(email=email).first():
+        return jsonify({"error": "An account with that email already exists"}), 409
+
+    client = Client(
+        email=email,
+        password_hash=bcrypt.generate_password_hash(password).decode("utf-8"),
+        business_name=business_name,
+        business_type=business_type,
+        city=city,
+    )
+    db.session.add(client)
+    db.session.commit()
+
+    token = create_access_token(identity=str(client.id))
+    return jsonify({"token": token})
+
+
 @auth_bp.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
@@ -218,4 +253,5 @@ def me():
         "reply_cadence": client.reply_cadence,
         "gbp_connected": client.gbp_connected,
         "onboarding_complete": client.onboarding_complete,
+        "subscribed": client.is_subscribed,
     })

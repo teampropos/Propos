@@ -8,34 +8,33 @@ api_bp = Blueprint("api", __name__)
 
 
 @api_bp.route("/checkout", methods=["POST"])
+@jwt_required()
 def create_checkout():
+    """Start a subscription for the logged-in client. Used once they've
+    already registered (see /api/auth/register) — connecting Google and
+    browsing the product don't require this to have happened first."""
     import os
     import stripe
 
-    data = request.get_json() or {}
-    email = (data.get("email") or "").strip().lower()
-    business_name = (data.get("business_name") or "").strip()
-    business_type = (data.get("business_type") or "").strip()
-    city = (data.get("city") or "").strip()
+    client_id = int(get_jwt_identity())
+    client = Client.query.get(client_id)
+    if not client:
+        return jsonify({"error": "Not found"}), 404
 
-    if not email or not business_name or not city:
-        return jsonify({"error": "Email, business name and city are required"}), 400
+    if client.is_subscribed:
+        return jsonify({"error": "You already have an active subscription"}), 400
 
     stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
     frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
     session = stripe.checkout.Session.create(
-        customer_email=email,
+        customer_email=client.email,
         payment_method_types=["card"],
         line_items=[{"price": os.environ.get("STRIPE_PRICE_ID"), "quantity": 1}],
         mode="subscription",
-        metadata={
-            "business_name": business_name,
-            "business_type": business_type,
-            "city": city,
-        },
-        success_url=f"{frontend_url}/welcome",
-        cancel_url=f"{frontend_url}/pricing",
+        client_reference_id=str(client.id),
+        success_url=f"{frontend_url}/onboarding?subscribed=1",
+        cancel_url=f"{frontend_url}/onboarding",
     )
 
     return jsonify({"url": session.url})
@@ -138,6 +137,11 @@ def pending():
 def approve_reply(review_id):
     client_id = int(get_jwt_identity())
     review = Review.query.filter_by(id=review_id, client_id=client_id).first_or_404()
+    client = Client.query.get(client_id)
+
+    if not client.is_subscribed:
+        return jsonify({"error": "Subscribe to start posting replies to your reviews"}), 402
+
     data = request.get_json() or {}
     edited_text = data.get("payload")
 
@@ -151,7 +155,6 @@ def approve_reply(review_id):
         rep.edited = True
         was_edited = True
 
-    client = Client.query.get(client_id)
     if client.gbp_connected and review.google_review_id:
         from gbp.auth import get_session_for_client
         from gbp.reviews import post_reply as post_reply_to_google
@@ -271,7 +274,7 @@ def create_location():
     if not name or not city:
         return jsonify({"error": "Name and city are required"}), 400
 
-    if not client.stripe_subscription_id:
+    if not client.is_subscribed:
         return jsonify({"error": "No active subscription found"}), 400
 
     stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
