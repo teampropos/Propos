@@ -35,6 +35,28 @@ to 2025, and a Preferences page bug where an unrecognized tone value left
 the sample-reply box rendering empty. All fixed, deployed, committed,
 pushed. See the "Other gaps" section below for what's still open.
 
+**New feature (23 Sept 2026): connect-before-pay signup.** Account creation
+is now decoupled from payment — `POST /api/auth/register` creates an
+account with no Stripe involvement, so a prospective client can connect
+their real Google Business Profile and see actual reviews with draft
+replies in their portal before ever entering a card. Subscribing is a
+separate, later step (`POST /api/checkout`, now authenticated) that
+activates the same account via `client_reference_id` on the Stripe
+session — the webhook updates the existing account rather than creating a
+new one. Critically: nothing ever posts to a client's live Google listing
+until `Client.is_subscribed` is true (checked in the auto-post loop, the
+scheduled-post sweep, and the manual approve endpoint) — unpaid accounts
+only ever see drafts, never live posts. `/get-started` now registers
+instead of checking out; `/onboarding` reorders to Connect Google → tone/
+cadence → name → Subscribe → backlog. Verified end-to-end against a real
+account on production (register → connect → checkout session created,
+correctly tied to that account) before deploying; test data cleaned up
+after. Deployed, committed, pushed.
+
+Bonus: this also fixes the Google OAuth demo-video blocker — the real
+Connect Google flow is now reachable for free, right after registering,
+with no Stripe step in the way. See `GOOGLE_VERIFICATION.md`.
+
 **New feature (22 Sept 2026): reply cadence.** Clients can now choose how
 long Propos waits before actually posting an auto-approved reply to
 Google — instantly, within 24 hours, within 3–4 days, weekly, or monthly.
