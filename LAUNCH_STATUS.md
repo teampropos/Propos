@@ -174,24 +174,16 @@ Google OAuth client credentials in particular).
 
 ---
 
-## ⚠️ Biggest remaining blocker before real customers can use this
+## ✅ RESOLVED (24 Sept 2026): Google OAuth is fully live in production
 
-**The Google OAuth consent screen is still in "Testing" mode in Google Cloud
-Console**, not published/verified. This means:
-
-- Only Google accounts explicitly added as test users can complete the
-  "Connect Google Business Profile" flow.
-- A real paying customer, connecting their own Google account, would either
-  be blocked outright or shown a scary "Google hasn't verified this app"
-  warning screen — not something to put in front of a paying customer.
-- Getting this published requires Google's app verification process for the
-  `business.manage` scope (a "sensitive" scope), which typically wants a
-  privacy policy URL (have one), a demo video showing the OAuth flow, and a
-  scope justification, and can take days to weeks for Google to review.
-
-**This is the #1 thing standing between "the product technically works" and
-"a stranger can actually sign up and use it."** Nothing else on this list
-blocks a first real customer the way this does.
+This was flagged as the #1 launch blocker — it's now done. The app is
+published (Audience → Publishing status: **In production**), branding is
+verified and shown to users, and Google's Verification Centre confirms
+`business.manage` doesn't require sensitive-scope review at all (contrary
+to what older docs suggested). Any real Google account can now complete
+the "Connect Google Business Profile" flow — no test-user allow-list
+restriction, no "unverified app" warning screen. Full details and the
+exact steps taken are in `GOOGLE_VERIFICATION.md`.
 
 ---
 
