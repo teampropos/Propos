@@ -187,26 +187,36 @@ exact steps taken are in `GOOGLE_VERIFICATION.md`.
 
 ---
 
+## ✅ RESOLVED (26 Sept 2026): Password reset UI
+
+`/forgot-password` and `/reset-password` were both 404 — built and
+deployed both pages. Also found and fixed a real backend bug along the
+way: comparing Postgres's naive datetimes against
+`datetime.now(timezone.utc)` raised a `TypeError`, so every real password
+reset attempt (and the legacy pay-first setup-link flow) was silently
+crashing with a 500 instead of completing — this had been broken since it
+was written and would have hit the very first real user who forgot their
+password. Verified the full flow end-to-end on production: register →
+forgot-password → reset with the real token → old password rejected, new
+password works, token can't be reused.
+
 ## Other gaps, roughly in priority order
 
 1. **Backlog processing isn't built.** The onboarding wizard's last step
    still lets someone opt into paying for a review backlog, but nothing
    actually processes it server-side (`# TODO: trigger backlog processing if
    requested` is still sitting in `POST /api/onboarding/complete`).
-2. **No password reset UI.** The backend endpoints and the reset email both
-   work, but `/forgot-password` and `/reset-password` pages don't exist on
-   the frontend yet — they're 404s. Login already links to `/forgot-password`.
-3. **No Google reconnect handling.** If a client's refresh token ever fails
+2. **No Google reconnect handling.** If a client's refresh token ever fails
    (revoked access, expired grant), there's no detection for it and no
    "reconnect your Google account" email — it would just silently stop
    working for that client.
-4. **Nothing has been through the full flow with real money.** Everything's
-   been verified structurally (webhooks fire correctly, endpoints respond
-   correctly, emails send correctly) but no actual human has paid, received
-   the welcome email, set a password, connected Google, and had a real
-   review come in and get replied to, start to finish, in production.
-5. **No uptime/crash monitoring.** systemd restarts the Flask app if it
+3. **Nothing has been through the full flow with real money.** Registration,
+   connect-Google, and Stripe checkout session creation have each been
+   verified against real production endpoints, but no actual human has
+   completed a real payment → had the webhook activate their account → had
+   a real review come in and get replied to, start to finish, in production.
+4. **No uptime/crash monitoring.** systemd restarts the Flask app if it
    dies and PM2 does the same for the frontend, but nothing external
    (UptimeRobot, etc.) would tell you if the whole droplet went down.
-6. **`founder_tier` / `founder_counter` DB cleanup.** Unused now, harmless,
+5. **`founder_tier` / `founder_counter` DB cleanup.** Unused now, harmless,
    but a small migration to drop them would tidy things up.
