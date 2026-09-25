@@ -29,4 +29,14 @@ def create_app():
     from .webhooks.routes import webhooks_bp
     app.register_blueprint(webhooks_bp, url_prefix="/webhooks")
 
+    @app.route("/health")
+    def health():
+        from sqlalchemy import text
+
+        try:
+            db.session.execute(text("SELECT 1"))
+            return {"status": "ok"}, 200
+        except Exception as e:
+            return {"status": "error", "detail": str(e)}, 503
+
     return app
