@@ -14,6 +14,15 @@ def _state_serializer() -> URLSafeSerializer:
     return URLSafeSerializer(os.environ.get("SECRET_KEY"))
 
 
+def _is_expired(expires_at: datetime) -> bool:
+    """Postgres returns naive datetimes even though we always store aware
+    (UTC) ones, so a direct comparison against datetime.now(timezone.utc)
+    raises TypeError. Normalize before comparing."""
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at < datetime.now(timezone.utc)
+
+
 @auth_bp.route("/register", methods=["POST"])
 def register():
     """Create an account with no payment involved. Lets a prospective client
@@ -80,7 +89,7 @@ def set_password():
     if not client:
         return jsonify({"error": "Invalid or expired setup link"}), 400
 
-    if client.setup_token_expires_at < datetime.now(timezone.utc):
+    if _is_expired(client.setup_token_expires_at):
         return jsonify({"error": "Setup link has expired"}), 400
 
     client.password_hash = bcrypt.generate_password_hash(password).decode("utf-8")
@@ -105,7 +114,12 @@ def forgot_password():
         db.session.commit()
 
         from ..emails import send_password_reset_email
-        send_password_reset_email(client, reset_token)
+        try:
+            send_password_reset_email(client, reset_token)
+        except Exception:
+            # The reset_token is already saved — a delivery failure shouldn't
+            # break the request or reveal whether the email was registered.
+            pass
 
     # Always return 200 to avoid email enumeration
     return jsonify({"message": "If that email is registered, a reset link has been sent"})
@@ -124,7 +138,7 @@ def reset_password():
     if not client:
         return jsonify({"error": "Invalid or expired reset link"}), 400
 
-    if client.reset_token_expires_at < datetime.now(timezone.utc):
+    if _is_expired(client.reset_token_expires_at):
         return jsonify({"error": "Reset link has expired"}), 400
 
     client.password_hash = bcrypt.generate_password_hash(password).decode("utf-8")
