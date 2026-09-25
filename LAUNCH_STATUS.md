@@ -200,6 +200,16 @@ password. Verified the full flow end-to-end on production: register →
 forgot-password → reset with the real token → old password rejected, new
 password works, token can't be reused.
 
+## ✅ RESOLVED (26 Sept 2026): Uptime monitoring
+
+Added `GET /health` on the Flask API (checks real DB connectivity, not
+just process liveness — `app/__init__.py`). Set up UptimeRobot with 5
+monitors, all checking every 5 minutes and emailing `team@getpropos.com`
+on failure: `api.getpropos.com/health`, `getpropos.com`,
+`getpropos.com/get-started` (the actual paid-signup entry point),
+`getpropos.com/login`, and `getpropos.com/pricing`. All confirmed green
+after setup.
+
 ## Other gaps, roughly in priority order
 
 1. **Backlog processing isn't built.** The onboarding wizard's last step
@@ -215,8 +225,5 @@ password works, token can't be reused.
    verified against real production endpoints, but no actual human has
    completed a real payment → had the webhook activate their account → had
    a real review come in and get replied to, start to finish, in production.
-4. **No uptime/crash monitoring.** systemd restarts the Flask app if it
-   dies and PM2 does the same for the frontend, but nothing external
-   (UptimeRobot, etc.) would tell you if the whole droplet went down.
-5. **`founder_tier` / `founder_counter` DB cleanup.** Unused now, harmless,
+4. **`founder_tier` / `founder_counter` DB cleanup.** Unused now, harmless,
    but a small migration to drop them would tidy things up.
