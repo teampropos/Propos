@@ -271,4 +271,7 @@ def me():
         "google_needs_reconnect": client.google_needs_reconnect,
         "onboarding_complete": client.onboarding_complete,
         "subscribed": client.is_subscribed,
+        "backlog_requested": client.backlog_requested,
+        "backlog_status": client.backlog_status,
+        "backlog_review_count": client.backlog_review_count,
     })

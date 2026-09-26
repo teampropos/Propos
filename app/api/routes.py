@@ -364,6 +364,7 @@ def onboarding_complete():
 
     data = request.get_json() or {}
     wants_backlog = bool(data.get("backlog"))
+    backlog_amount_cents = None
 
     if wants_backlog:
         if not client.is_subscribed:
@@ -405,6 +406,7 @@ def onboarding_complete():
 
             client.backlog_status = "pending"
             client.backlog_charge_id = charge_id
+            backlog_amount_cents = amount_cents
         else:
             # Nothing to process — don't charge for an empty backlog.
             client.backlog_status = "complete"
@@ -415,7 +417,12 @@ def onboarding_complete():
     from ..emails import send_onboarding_confirmation
     send_onboarding_confirmation(client)
 
-    return jsonify({"status": "ok"})
+    return jsonify({
+        "status": "ok",
+        "backlog_status": client.backlog_status,
+        "backlog_review_count": client.backlog_review_count,
+        "backlog_amount_cents": backlog_amount_cents,
+    })
 
 
 @api_bp.route("/billing/portal", methods=["POST"])
