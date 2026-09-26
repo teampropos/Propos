@@ -223,6 +223,8 @@ def regenerate_reply(review_id):
         city=client.city,
         tone_preference=tone,
         owner_name=client.owner_name or "",
+        signoff_style=client.signoff_style or "NONE",
+        custom_instructions=client.custom_instructions,
     )
 
     tone_examples = get_tone_memory(client_id, db_session=db.session)
@@ -349,6 +351,16 @@ def save_preferences():
         client.owner_name = data.get("owner_name") or None
     if "reply_cadence" in data:
         client.reply_cadence = data["reply_cadence"]
+    if "signoff_style" in data:
+        style = data.get("signoff_style") or "NONE"
+        if style not in ("NONE", "OWNER_NAME", "BUSINESS_NAME"):
+            return jsonify({"error": "Invalid signoff_style"}), 400
+        client.signoff_style = style
+    if "custom_instructions" in data:
+        instructions = (data.get("custom_instructions") or "").strip()
+        if len(instructions) > 1000:
+            return jsonify({"error": "Custom instructions must be 1000 characters or fewer"}), 400
+        client.custom_instructions = instructions or None
 
     db.session.commit()
     return jsonify({"status": "saved"})

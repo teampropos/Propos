@@ -12,6 +12,8 @@ class Client(db.Model):
     business_type = db.Column(db.String(100), nullable=False)
     city = db.Column(db.String(100), nullable=False)
     owner_name = db.Column(db.String(255), nullable=True)
+    signoff_style = db.Column(db.String(20), default="NONE", nullable=False)  # NONE, OWNER_NAME, BUSINESS_NAME
+    custom_instructions = db.Column(db.Text, nullable=True)
     tone_preference = db.Column(db.String(50), nullable=True)
     reply_cadence = db.Column(db.String(50), nullable=True)
     stripe_customer_id = db.Column(db.String(255), nullable=True)

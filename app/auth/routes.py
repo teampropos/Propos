@@ -265,6 +265,8 @@ def me():
         "business_type": client.business_type,
         "city": client.city,
         "owner_name": client.owner_name,
+        "signoff_style": client.signoff_style,
+        "custom_instructions": client.custom_instructions,
         "tone_preference": client.tone_preference,
         "reply_cadence": client.reply_cadence,
         "gbp_connected": client.gbp_connected,

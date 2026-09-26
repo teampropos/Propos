@@ -1,13 +1,23 @@
 """Tone memory management for per-client reply personalisation."""
 
+import random
+
 TONE_MEMORY_CAP = 15
+EXAMPLES_PER_GENERATION = 6
 
 
 def get_tone_memory(client_id: int, db_session=None) -> list[str]:
-    """Return up to 15 approved replies for a client.
+    """Return a sample of approved replies for a client, to use as a style
+    reference when generating a new one.
 
-    Edited replies (weight=2) are prioritised over unedited (weight=1).
-    Falls back to empty list if no DB session provided.
+    Always includes edited replies (weight=2) — the owner deliberately
+    rewrote these, so they're the strongest signal of the real voice. The
+    remaining slots are a random sample of unedited approvals rather than
+    always the same most-recent ones: a business with a lot of reviews
+    would otherwise see the exact same handful of examples on every single
+    generation, which pushes the model toward reusing the same opening and
+    closing lines instead of the variety a real business's replies should
+    have. Falls back to empty list if no DB session provided.
     """
     if db_session is None:
         return []
@@ -21,7 +31,16 @@ def get_tone_memory(client_id: int, db_session=None) -> list[str]:
         .limit(TONE_MEMORY_CAP)
         .all()
     )
-    return [row.reply_text for row in rows]
+    if len(rows) <= EXAMPLES_PER_GENERATION:
+        return [row.reply_text for row in rows]
+
+    edited = [row for row in rows if row.weight >= 2]
+    unedited = [row for row in rows if row.weight < 2]
+    remaining_slots = max(EXAMPLES_PER_GENERATION - len(edited), 0)
+    sampled_unedited = random.sample(unedited, min(remaining_slots, len(unedited)))
+
+    selected = edited[:EXAMPLES_PER_GENERATION] + sampled_unedited
+    return [row.reply_text for row in selected]
 
 
 def save_to_tone_memory(client_id: int, reply_text: str, edited: bool, db_session) -> None:

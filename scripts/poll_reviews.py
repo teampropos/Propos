@@ -55,6 +55,8 @@ def poll_location(client: Client, location: Location) -> int:
         city=client.city,
         tone_preference=_tone_for(client),
         owner_name=client.owner_name or "",
+        signoff_style=client.signoff_style or "NONE",
+        custom_instructions=client.custom_instructions,
     )
 
     processed = 0
@@ -202,6 +204,8 @@ def process_backlogs() -> int:
                 city=client.city,
                 tone_preference=_tone_for(client),
                 owner_name=client.owner_name or "",
+                signoff_style=client.signoff_style or "NONE",
+                custom_instructions=client.custom_instructions,
             )
 
             client_processed = 0

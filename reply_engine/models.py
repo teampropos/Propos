@@ -46,6 +46,8 @@ class BusinessProfile:
     city: str
     client_id: str
     owner_name: Optional[str] = None
+    signoff_style: str = "NONE"  # NONE, OWNER_NAME, BUSINESS_NAME
+    custom_instructions: Optional[str] = None
     tone_preference: TonePreference = TonePreference.WARM_FRIENDLY
 
 
