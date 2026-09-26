@@ -210,13 +210,29 @@ on failure: `api.getpropos.com/health`, `getpropos.com`,
 `getpropos.com/login`, and `getpropos.com/pricing`. All confirmed green
 after setup.
 
+## ✅ RESOLVED (26 Sept 2026): Backlog processing
+
+The onboarding backlog step now actually does something. On opt-in:
+counts the client's real historical review total from Google, picks the
+matching price tier ($49/$99/$149/$199), and charges their saved card
+off-session (no second checkout redirect — see `app/backlog.py`). Actual
+review fetching + reply drafting happens in the background via the
+existing 10-minute poller (`process_backlogs()` in `scripts/poll_reviews.py`),
+since drafting replies for potentially hundreds of reviews would time out
+an HTTP request. Every backlog reply lands in Pending Approvals and is
+never auto-posted, regardless of star rating.
+
+Verified against Stripe test mode with a real attached test card (correct
+price tier at every boundary, a real off-session charge succeeding) and
+against synthetic review data with the Google API stubbed (correct
+pending/needs_human/spam routing, confirmed nothing auto-posts). Testing
+caught the same class of bug as the password-reset fix: a failed
+notification email was overwriting an already-successful backlog run's
+status back to "failed" — fixed.
+
 ## Other gaps, roughly in priority order
 
-1. **Backlog processing isn't built.** The onboarding wizard's last step
-   still lets someone opt into paying for a review backlog, but nothing
-   actually processes it server-side (`# TODO: trigger backlog processing if
-   requested` is still sitting in `POST /api/onboarding/complete`).
-2. **No Google reconnect handling.** If a client's refresh token ever fails
+1. **No Google reconnect handling.** If a client's refresh token ever fails
    (revoked access, expired grant), there's no detection for it and no
    "reconnect your Google account" email — it would just silently stop
    working for that client.
