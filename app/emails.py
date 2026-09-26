@@ -67,6 +67,25 @@ def send_subscription_activated_email(client) -> None:
     _send(client.email, "You're live on Propos", body)
 
 
+def send_backlog_complete_email(client, count: int) -> None:
+    """Sent once the one-time backlog job has drafted replies for every
+    existing review it found. Nothing has posted yet — they're all waiting
+    in Pending Approvals."""
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    body = f"""
+    <h2 style="margin-bottom: 4px;">Your backlog is ready for review</h2>
+    <p>Propos went through {count} existing review{'s' if count != 1 else ''} for {client.business_name}
+    and drafted a reply for each one. Nothing has been posted &mdash; they&rsquo;re all waiting in
+    Pending Approvals for you to review, edit, or approve.</p>
+    <p>
+      <a href="{frontend_url}/portal/pending" style="display:inline-block; background:#141414; color:#fff; padding:12px 24px; border-radius:4px; text-decoration:none; margin: 12px 0;">
+        Review pending replies
+      </a>
+    </p>
+    """
+    _send(client.email, "Your review backlog is ready", body)
+
+
 def send_onboarding_confirmation(client) -> None:
     """Sent once the onboarding wizard is completed."""
     body = f"""

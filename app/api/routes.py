@@ -355,13 +355,52 @@ def onboarding_complete():
     if not client:
         return jsonify({"error": "Not found"}), 404
 
+    data = request.get_json() or {}
+    wants_backlog = bool(data.get("backlog"))
+
+    if wants_backlog:
+        if not client.is_subscribed:
+            return jsonify({"error": "Subscribe before requesting backlog processing"}), 400
+
+        location = Location.query.filter_by(client_id=client.id, active=True).first()
+        if not location or not location.gbp_review_path:
+            return jsonify({"error": "Connect Google Business Profile before requesting backlog processing"}), 400
+
+        from gbp.auth import get_session_for_client
+        from gbp.reviews import list_reviews as gbp_list_reviews
+
+        gbp_session = get_session_for_client(client, db.session)
+        raw_reviews = gbp_list_reviews(gbp_session, location.gbp_review_path)
+        count = len(raw_reviews)
+
+        client.backlog_requested = True
+        client.backlog_review_count = count
+
+        if count > 0:
+            from ..backlog import price_for_count, charge_backlog_fee
+
+            _price_id, amount_cents = price_for_count(count)
+            try:
+                charge_id = charge_backlog_fee(client, amount_cents)
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({
+                    "error": f"We couldn't charge your card for backlog processing ({e}). "
+                             "Check your payment method in Billing and try again from there."
+                }), 402
+
+            client.backlog_status = "pending"
+            client.backlog_charge_id = charge_id
+        else:
+            # Nothing to process — don't charge for an empty backlog.
+            client.backlog_status = "complete"
+
     client.onboarding_complete = True
     db.session.commit()
 
     from ..emails import send_onboarding_confirmation
     send_onboarding_confirmation(client)
 
-    # TODO: trigger backlog processing if requested
     return jsonify({"status": "ok"})
 
 

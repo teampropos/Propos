@@ -29,6 +29,10 @@ class Client(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     cancelled_at = db.Column(db.DateTime, nullable=True)
     data_archive_at = db.Column(db.DateTime, nullable=True)
+    backlog_requested = db.Column(db.Boolean, default=False, nullable=False)
+    backlog_status = db.Column(db.String(20), nullable=True)  # pending, processing, complete, failed
+    backlog_review_count = db.Column(db.Integer, nullable=True)
+    backlog_charge_id = db.Column(db.String(255), nullable=True)
 
     locations = db.relationship("Location", back_populates="client", lazy="dynamic")
     reviews = db.relationship("Review", back_populates="client", lazy="dynamic")

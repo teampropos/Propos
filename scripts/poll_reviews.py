@@ -160,6 +160,105 @@ def post_due_replies() -> int:
     return posted
 
 
+def process_backlogs() -> int:
+    """One-time processing of a client's full review history, for anyone
+    who paid for backlog processing during onboarding. Runs in the
+    background (via this same cron cycle) rather than inside the
+    onboarding request, since drafting replies for potentially hundreds of
+    reviews would time out an HTTP request.
+
+    Every resulting review is held for approval (spam/needs_human/pending)
+    — never auto-posted, regardless of star rating or cadence. These are
+    reviews the owner has never seen a Propos draft for; silently mass-
+    posting a backlog of replies to their live Google listing without them
+    seeing it first would be a bad surprise, not a feature."""
+    pending_clients = Client.query.filter_by(backlog_status="pending").all()
+    processed_count = 0
+
+    for client in pending_clients:
+        client.backlog_status = "processing"
+        db.session.commit()
+
+        try:
+            location = Location.query.filter_by(client_id=client.id, active=True).first()
+            if not location or not location.gbp_review_path:
+                client.backlog_status = "failed"
+                db.session.commit()
+                print(f"[{client.email}] backlog processing failed: no connected location")
+                continue
+
+            session = get_session_for_client(client, db.session)
+            raw_reviews = list_reviews(session, location.gbp_review_path)
+
+            profile = BusinessProfile(
+                client_id=client.id,
+                name=client.business_name,
+                business_type=client.business_type,
+                city=client.city,
+                tone_preference=_tone_for(client),
+                owner_name=client.owner_name or "",
+            )
+
+            client_processed = 0
+            for raw in raw_reviews:
+                google_review_id = raw.get("name")
+                if not google_review_id:
+                    continue
+                if Review.query.filter_by(google_review_id=google_review_id).first():
+                    continue  # already picked up by the regular poller or a prior run
+
+                engine_review = to_review(raw)
+                result = process_review(engine_review, profile, db.session)
+
+                status = "spam" if result.is_spam else ("needs_human" if result.low_confidence else "pending")
+                db_review = Review(
+                    client_id=client.id,
+                    location_id=location.id,
+                    google_review_id=google_review_id,
+                    reviewer_name=engine_review.reviewer_name,
+                    star_rating=engine_review.star_rating,
+                    review_text=engine_review.review_text,
+                    received_at=datetime.now(timezone.utc),
+                    status=status,
+                )
+                db.session.add(db_review)
+                db.session.flush()
+
+                if not result.is_spam:
+                    reply = Reply(
+                        review_id=db_review.id,
+                        client_id=client.id,
+                        reply_text=result.reply_text,
+                        routing_reason=result.routing_reason or "Backlog review — held for your approval",
+                    )
+                    db.session.add(reply)
+
+                db.session.commit()
+                client_processed += 1
+                processed_count += 1
+
+            client.backlog_status = "complete"
+            db.session.commit()
+            print(f"[{client.email}] backlog complete: {client_processed} review(s) drafted")
+
+            try:
+                from app.emails import send_backlog_complete_email
+                send_backlog_complete_email(client, client_processed)
+            except Exception as e:
+                # The backlog itself is genuinely done and already committed
+                # as such — an email delivery failure shouldn't reclassify
+                # real, successful processing as failed.
+                print(f"[{client.email}] backlog complete, but notification email failed: {e}")
+
+        except Exception as e:
+            db.session.rollback()
+            client.backlog_status = "failed"
+            db.session.commit()
+            print(f"[{client.email}] backlog processing failed: {e}")
+
+    return processed_count
+
+
 def main():
     app = create_app()
     with app.app_context():
@@ -182,8 +281,9 @@ def main():
                 print(f"[{client.email}] {location.name}: ERROR {e}")
 
         due_posted = post_due_replies()
+        backlog_processed = process_backlogs()
 
-        print(f"Done. {total} new review(s) processed across {len(locations)} location(s), {due_posted} scheduled repl(y/ies) posted.")
+        print(f"Done. {total} new review(s) processed across {len(locations)} location(s), {due_posted} scheduled repl(y/ies) posted, {backlog_processed} backlog review(s) drafted.")
 
 
 if __name__ == "__main__":
