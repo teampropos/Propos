@@ -230,16 +230,38 @@ caught the same class of bug as the password-reset fix: a failed
 notification email was overwriting an already-successful backlog run's
 status back to "failed" — fixed.
 
+## ✅ RESOLVED (26 Sept 2026): Google reconnect handling
+
+A dead refresh token (revoked access, expired grant) used to just
+silently stop polling/posting for that client forever, with nothing
+telling them or us. `flag_needs_reconnect()` in `gbp/auth.py` now catches
+`google.auth.exceptions.RefreshError` at every real call site that touches
+a client's Google session — the regular poller, the scheduled-post
+sweep, backlog processing, the manual approve endpoint, and the backlog
+review-count check — and marks the client (`gbp_connected=False`,
+`google_needs_reconnect=True`), so nothing keeps retrying a dead token.
+A one-time email points them to reconnect (won't resend every 10-minute
+cron cycle), and the portal shows an orange banner plus a specific
+"Reconnect Google" button on the Locations page instead of looking
+identical to never having connected at all. Clears automatically on a
+successful reconnect.
+
+Worth knowing for next time: initially tried catching this inside
+`get_session_for_client` itself, which turned out to be dead code —
+no expiry is tracked on stored credentials, so `AuthorizedSession`
+refreshes lazily on its first real request rather than eagerly, meaning
+the actual failure surfaces from wherever the session gets *used*
+(list_reviews/post_reply/etc.), not from the function that creates it.
+Verified with a genuinely invalid access/refresh token pair against
+Google's real token endpoint — confirmed the flag gets set correctly and
+the reconnect email sends exactly once.
+
 ## Other gaps, roughly in priority order
 
-1. **No Google reconnect handling.** If a client's refresh token ever fails
-   (revoked access, expired grant), there's no detection for it and no
-   "reconnect your Google account" email — it would just silently stop
-   working for that client.
-3. **Nothing has been through the full flow with real money.** Registration,
+1. **Nothing has been through the full flow with real money.** Registration,
    connect-Google, and Stripe checkout session creation have each been
    verified against real production endpoints, but no actual human has
    completed a real payment → had the webhook activate their account → had
    a real review come in and get replied to, start to finish, in production.
-4. **`founder_tier` / `founder_counter` DB cleanup.** Unused now, harmless,
+2. **`founder_tier` / `founder_counter` DB cleanup.** Unused now, harmless,
    but a small migration to drop them would tidy things up.
