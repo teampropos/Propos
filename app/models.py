@@ -14,7 +14,6 @@ class Client(db.Model):
     owner_name = db.Column(db.String(255), nullable=True)
     tone_preference = db.Column(db.String(50), nullable=True)
     reply_cadence = db.Column(db.String(50), nullable=True)
-    founder_tier = db.Column(db.Boolean, default=False, nullable=False)
     stripe_customer_id = db.Column(db.String(255), nullable=True)
     stripe_subscription_id = db.Column(db.String(255), nullable=True)
     google_oauth_id = db.Column(db.String(255), nullable=True)
@@ -118,13 +117,6 @@ class ToneMemory(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     client = db.relationship("Client", back_populates="tone_memories")
-
-
-class FounderCounter(db.Model):
-    __tablename__ = "founder_counter"
-
-    id = db.Column(db.Integer, primary_key=True)
-    count = db.Column(db.Integer, default=0, nullable=False)
 
 
 class Waitlist(db.Model):
