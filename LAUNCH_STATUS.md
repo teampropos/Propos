@@ -256,12 +256,18 @@ Verified with a genuinely invalid access/refresh token pair against
 Google's real token endpoint — confirmed the flag gets set correctly and
 the reconnect email sends exactly once.
 
-## Other gaps, roughly in priority order
+## ✅ RESOLVED (26 Sept 2026): DB cleanup
+
+Dropped the unused `founder_tier` column and `founder_counter` table,
+leftover from the old founder-tier pricing model. Confirmed nothing in
+either repo still referenced them before dropping the schema.
+
+## Only one thing left
 
 1. **Nothing has been through the full flow with real money.** Registration,
    connect-Google, and Stripe checkout session creation have each been
    verified against real production endpoints, but no actual human has
    completed a real payment → had the webhook activate their account → had
    a real review come in and get replied to, start to finish, in production.
-2. **`founder_tier` / `founder_counter` DB cleanup.** Unused now, harmless,
-   but a small migration to drop them would tidy things up.
+   This is genuinely the last gap — everything else on this document's
+   original list is resolved.
