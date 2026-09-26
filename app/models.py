@@ -21,6 +21,8 @@ class Client(db.Model):
     google_access_token = db.Column(db.Text, nullable=True)
     google_refresh_token = db.Column(db.Text, nullable=True)
     gbp_connected = db.Column(db.Boolean, default=False, nullable=False)
+    google_needs_reconnect = db.Column(db.Boolean, default=False, nullable=False)
+    google_reconnect_notified_at = db.Column(db.DateTime, nullable=True)
     onboarding_complete = db.Column(db.Boolean, default=False, nullable=False)
     setup_token = db.Column(db.String(255), nullable=True)
     setup_token_expires_at = db.Column(db.DateTime, nullable=True)

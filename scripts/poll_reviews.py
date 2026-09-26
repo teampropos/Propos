@@ -16,11 +16,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from google.auth.exceptions import RefreshError
+
 from app import create_app
 from app.cadence import compute_scheduled_post_at
 from app.extensions import db
 from app.models import Client, Location, Review, Reply
-from gbp.auth import get_session_for_client
+from gbp.auth import get_session_for_client, flag_needs_reconnect
 from gbp.reviews import list_reviews, post_reply, to_review
 from reply_engine import BusinessProfile, TonePreference, process_review
 from reply_engine.tone_memory import save_to_tone_memory
@@ -154,6 +156,9 @@ def post_due_replies() -> int:
             db.session.commit()
             save_to_tone_memory(client.id, reply.reply_text, edited=False, db_session=db.session)
             posted += 1
+        except RefreshError:
+            flag_needs_reconnect(client, db.session)
+            print(f"[{client.email}] Google connection dead — flagged for reconnect")
         except Exception as e:
             print(f"[{client.email}] failed to post scheduled reply for review {review.id}: {e}")
 
@@ -250,6 +255,11 @@ def process_backlogs() -> int:
                 # real, successful processing as failed.
                 print(f"[{client.email}] backlog complete, but notification email failed: {e}")
 
+        except RefreshError:
+            db.session.rollback()
+            client.backlog_status = "failed"
+            flag_needs_reconnect(client, db.session)
+            print(f"[{client.email}] backlog processing failed — Google connection dead, flagged for reconnect")
         except Exception as e:
             db.session.rollback()
             client.backlog_status = "failed"
@@ -257,6 +267,31 @@ def process_backlogs() -> int:
             print(f"[{client.email}] backlog processing failed: {e}")
 
     return processed_count
+
+
+def notify_reconnect_needed() -> int:
+    """Email anyone newly flagged with a dead Google connection — once,
+    not on every 10-minute cron cycle. get_session_for_client() (called
+    from poll_location/post_due_replies/process_backlogs above) is what
+    actually sets google_needs_reconnect when a refresh fails; this just
+    handles the one-time notification."""
+    clients = Client.query.filter_by(
+        google_needs_reconnect=True,
+        google_reconnect_notified_at=None,
+    ).all()
+
+    notified = 0
+    for client in clients:
+        try:
+            from app.emails import send_google_reconnect_email
+            send_google_reconnect_email(client)
+            client.google_reconnect_notified_at = datetime.now(timezone.utc)
+            db.session.commit()
+            notified += 1
+        except Exception as e:
+            print(f"[{client.email}] failed to send reconnect email: {e}")
+
+    return notified
 
 
 def main():
@@ -277,13 +312,17 @@ def main():
                 total += count
                 if count:
                     print(f"[{client.email}] {location.name}: {count} new review(s) processed")
+            except RefreshError:
+                flag_needs_reconnect(client, db.session)
+                print(f"[{client.email}] {location.name}: Google connection dead — flagged for reconnect")
             except Exception as e:
                 print(f"[{client.email}] {location.name}: ERROR {e}")
 
         due_posted = post_due_replies()
         backlog_processed = process_backlogs()
+        reconnect_notified = notify_reconnect_needed()
 
-        print(f"Done. {total} new review(s) processed across {len(locations)} location(s), {due_posted} scheduled repl(y/ies) posted, {backlog_processed} backlog review(s) drafted.")
+        print(f"Done. {total} new review(s) processed across {len(locations)} location(s), {due_posted} scheduled repl(y/ies) posted, {backlog_processed} backlog review(s) drafted, {reconnect_notified} reconnect email(s) sent.")
 
 
 if __name__ == "__main__":

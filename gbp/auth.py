@@ -106,6 +106,16 @@ def get_session_for_client(client, db_session) -> AuthorizedSession:
 
     Refreshes and persists a new access token first if the stored one has
     expired, so the caller never has to think about token lifecycle.
+
+    Note: since no expiry is tracked on the stored credentials, this
+    eager-refresh branch essentially never fires in practice —
+    AuthorizedSession instead refreshes lazily on its first real request
+    (a 401 triggers an automatic refresh attempt). That means a dead
+    refresh token (revoked access, expired grant) surfaces as a
+    google.auth.exceptions.RefreshError from wherever the returned session
+    is actually used (list_reviews/post_reply/etc.), not from this
+    function — callers need to catch it there and call
+    flag_needs_reconnect() below.
     """
     creds = Credentials(
         token=client.google_access_token,
@@ -122,3 +132,14 @@ def get_session_for_client(client, db_session) -> AuthorizedSession:
         db_session.commit()
 
     return AuthorizedSession(creds)
+
+
+def flag_needs_reconnect(client, db_session) -> None:
+    """Mark a client's Google connection as dead so nothing keeps retrying
+    it every poll cycle, and so they can be emailed to reconnect. Call this
+    from an `except google.auth.exceptions.RefreshError:` around the point
+    where the client's session is actually used — see get_session_for_client's
+    docstring for why that's not inside get_session_for_client itself."""
+    client.gbp_connected = False
+    client.google_needs_reconnect = True
+    db_session.commit()

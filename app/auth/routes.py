@@ -202,6 +202,8 @@ def google_callback():
     if creds.refresh_token:
         client.google_refresh_token = creds.refresh_token
     client.gbp_connected = True
+    client.google_needs_reconnect = False
+    client.google_reconnect_notified_at = None
     db.session.commit()
 
     _discover_primary_location(client)
@@ -266,6 +268,7 @@ def me():
         "tone_preference": client.tone_preference,
         "reply_cadence": client.reply_cadence,
         "gbp_connected": client.gbp_connected,
+        "google_needs_reconnect": client.google_needs_reconnect,
         "onboarding_complete": client.onboarding_complete,
         "subscribed": client.is_subscribed,
     })

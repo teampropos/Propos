@@ -177,6 +177,25 @@ def send_cancellation_email(client) -> None:
     _send(client.email, "Your Propos account has been paused", body)
 
 
+def send_google_reconnect_email(client) -> None:
+    """Sent once when a client's Google refresh token dies (access revoked,
+    grant expired) — Propos has stopped being able to read or reply to
+    their reviews until they reconnect."""
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    body = f"""
+    <h2 style="margin-bottom: 4px;">Reconnect your Google Business Profile</h2>
+    <p>Propos lost access to {client.business_name}&rsquo;s Google Business Profile &mdash; this usually happens
+    if access was revoked from your Google Account settings, or the connection simply expired. Reviews have
+    stopped being read or replied to until you reconnect.</p>
+    <p>
+      <a href="{frontend_url}/portal/locations" style="display:inline-block; background:#141414; color:#fff; padding:12px 24px; border-radius:4px; text-decoration:none; margin: 12px 0;">
+        Reconnect Google
+      </a>
+    </p>
+    """
+    _send(client.email, "Action needed — reconnect your Google Business Profile", body)
+
+
 def send_password_reset_email(client, reset_token: str) -> None:
     frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
     reset_url = f"{frontend_url}/reset-password?token={reset_token}"

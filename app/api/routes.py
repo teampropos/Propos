@@ -156,11 +156,18 @@ def approve_reply(review_id):
         was_edited = True
 
     if client.gbp_connected and review.google_review_id:
-        from gbp.auth import get_session_for_client
+        from google.auth.exceptions import RefreshError
+        from gbp.auth import get_session_for_client, flag_needs_reconnect
         from gbp.reviews import post_reply as post_reply_to_google
 
-        google_session = get_session_for_client(client, db.session)
-        post_reply_to_google(google_session, review.google_review_id, rep.reply_text)
+        try:
+            google_session = get_session_for_client(client, db.session)
+            post_reply_to_google(google_session, review.google_review_id, rep.reply_text)
+        except RefreshError:
+            flag_needs_reconnect(client, db.session)
+            return jsonify({
+                "error": "Your Google connection has stopped working. Reconnect it from the Locations page, then try approving again."
+            }), 409
         rep.posted_at = datetime.now(timezone.utc)
 
     rep.approved_at = datetime.now(timezone.utc)
@@ -366,11 +373,18 @@ def onboarding_complete():
         if not location or not location.gbp_review_path:
             return jsonify({"error": "Connect Google Business Profile before requesting backlog processing"}), 400
 
-        from gbp.auth import get_session_for_client
+        from google.auth.exceptions import RefreshError
+        from gbp.auth import get_session_for_client, flag_needs_reconnect
         from gbp.reviews import list_reviews as gbp_list_reviews
 
-        gbp_session = get_session_for_client(client, db.session)
-        raw_reviews = gbp_list_reviews(gbp_session, location.gbp_review_path)
+        try:
+            gbp_session = get_session_for_client(client, db.session)
+            raw_reviews = gbp_list_reviews(gbp_session, location.gbp_review_path)
+        except RefreshError:
+            flag_needs_reconnect(client, db.session)
+            return jsonify({
+                "error": "Your Google connection has stopped working. Reconnect it from the Locations page, then try requesting backlog processing again."
+            }), 409
         count = len(raw_reviews)
 
         client.backlog_requested = True
